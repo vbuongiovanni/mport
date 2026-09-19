@@ -30,7 +30,7 @@ struct ConfigureDefaults: ParsableCommand {
         if let outputPath = outputPath {
             let url = URL(filePath: outputPath)
             
-            if let _ = try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) {
+            if (try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)) != nil {
                 guard FileManager.default.fileExists(atPath: url.path) else {
                     throw CLIError.missingConfig
                 }

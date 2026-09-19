@@ -127,7 +127,9 @@ struct Export: AsyncParsableCommand {
                 
             )
             
-            let targetCollections = availableCollections.filter {selectedCollections.contains($0.namespace.collectionName) }
+            let targetCollections = availableCollections.filter {
+                selectedCollections.contains($0.namespace.collectionName)
+            }
             
             for collection in targetCollections {
                 try await exportCollection(savePath: exportDir, collection: collection, format: exportFormat)
@@ -137,22 +139,23 @@ struct Export: AsyncParsableCommand {
     
     private func getPath(from collectionName: String, format: OutputFormat) throws -> String {
         switch format {
-            case .json:
+        case .json:
             return collectionName.appending(".json")
-            case .bson:
+        case .bson:
             return collectionName.appending(".bson")
-            case .mongoShellSyntax:
+        case .mongoShellSyntax:
             return collectionName.appending(".json")
-            default:
+        default:
             throw CLIError.invalidExportFormat
         }
     }
     
-    private func exportCollection(savePath: String, collection: MongoCollection, format: OutputFormat) async throws {
+    func exportCollection(savePath: String, collection: MongoCollection, format: OutputFormat) async throws {
         
         let directoryURL = URL(filePath: "\(savePath)")
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-        let url = try directoryURL.appending(component: getPath(from: collection.namespace.collectionName, format: format))
+        let fileName = try getPath(from: collection.namespace.collectionName, format: format)
+        let url = directoryURL.appending(component: fileName)
         
         guard let coordinator = OutputStream(url: url, append: false) else {
             throw CLIError.outputSteamFailure
@@ -201,8 +204,5 @@ struct Export: AsyncParsableCommand {
         }
         print("exported '\(collection.namespace.collectionName)'")
     }
-    
-    
-    
     
 }

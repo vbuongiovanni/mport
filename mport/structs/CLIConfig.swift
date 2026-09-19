@@ -18,7 +18,6 @@ struct CLIConfig: Codable {
         self.connections = [MongoConnectionRecord]()
     }
     
-    
     static func read() throws -> CLIConfig {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let configFileUrl = homeDir.appending(component: configFileName)
@@ -38,7 +37,7 @@ struct CLIConfig: Codable {
             try data.write(to: configFileUrl, options: .atomic)
         }
         
-        return config;
+        return config
     }
     
     static func write(newConfig: CLIConfig) throws {

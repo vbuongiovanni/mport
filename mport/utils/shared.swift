@@ -10,7 +10,12 @@ import Foundation
 import MongoKitten
 import Noora
 
-func selectConnection(config: CLIConfig, connectionName: String? = nil) throws -> MongoConnectionRecord {
+func selectConnection(
+    config: CLIConfig,
+    connectionName: String? = nil,
+    title: String = "Connection",
+    description: String = "Select a connection to import into"
+) throws -> MongoConnectionRecord {
     if connectionName != nil {
         if let selectedConnection = config.connections.first(where: { $0.name == connectionName }) {
             return selectedConnection
@@ -18,10 +23,10 @@ func selectConnection(config: CLIConfig, connectionName: String? = nil) throws -
     }
     
     let connectionAlias = Noora().singleChoicePrompt(
-        title: "Connection",
+        title: TerminalText(stringLiteral: title),
         question: "Select a connection",
         options: config.connections.map(\.name),
-        description: "Select a connection to import into",
+        description: TerminalText(stringLiteral: description),
         collapseOnSelection: true,
         autoselectSingleChoice: true
     )
@@ -33,12 +38,17 @@ func selectConnection(config: CLIConfig, connectionName: String? = nil) throws -
     throw CLIError.missingArgument(argument: "connectionName")
 }
 
-func selectDatabase(using client: MongoDatabase, dbName: String? = nil) async throws -> String {
+func selectDatabase(
+    using client: MongoDatabase,
+    dbName: String? = nil,
+    title: String = "Database",
+    description: String = "Select a database"
+) async throws -> String {
     var availableDBs: [String]
     var selectedDatabase: String = dbName ?? ""
     
     do {
-        availableDBs = try await client.pool.listDatabases().map() { $0.name }
+        availableDBs = try await client.pool.listDatabases().map { $0.name }
     } catch {
         throw CLIError.connectionFailed
     }
@@ -56,10 +66,10 @@ func selectDatabase(using client: MongoDatabase, dbName: String? = nil) async th
     
     if selectedDatabase.isEmpty {
         selectedDatabase = Noora().singleChoicePrompt(
-            title: "Database",
+            title: TerminalText(stringLiteral: title),
             question: "Select a database",
             options: availableDBs,
-            description: "Select an output format",
+            description: TerminalText(stringLiteral: description),
             collapseOnSelection: true,
             autoselectSingleChoice: true
         )

@@ -10,6 +10,9 @@
 		EB057DC3305DC102005DC6DD /* Noora in Frameworks */ = {isa = PBXBuildFile; productRef = EB057DC2305DC102005DC6DD /* Noora */; };
 		EBB872683059A12000AE7794 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = EBB872673059A12000AE7794 /* ArgumentParser */; };
 		EBB872773059AD0900AE7794 /* MongoKitten in Frameworks */ = {isa = PBXBuildFile; productRef = EBB872763059AD0900AE7794 /* MongoKitten */; };
+		EBC0000D30600000009EA2E5 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = EBC0000A30600000009EA2E5 /* ArgumentParser */; };
+		EBC0000E30600000009EA2E5 /* MongoKitten in Frameworks */ = {isa = PBXBuildFile; productRef = EBC0000B30600000009EA2E5 /* MongoKitten */; };
+		EBC0000F30600000009EA2E5 /* Noora in Frameworks */ = {isa = PBXBuildFile; productRef = EBC0000C30600000009EA2E5 /* Noora */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -26,12 +29,18 @@
 
 /* Begin PBXFileReference section */
 		EBB8725C3059A00300AE7794 /* mport */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mport; sourceTree = BUILT_PRODUCTS_DIR; };
+		EBC0000230600000009EA2E5 /* mportTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mportTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EBB8725E3059A00300AE7794 /* mport */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = mport;
+			sourceTree = "<group>";
+		};
+		EBC0000330600000009EA2E5 /* mportTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = mportTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -47,6 +56,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EBC0000530600000009EA2E5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EBC0000F30600000009EA2E5 /* Noora in Frameworks */,
+				EBC0000E30600000009EA2E5 /* MongoKitten in Frameworks */,
+				EBC0000D30600000009EA2E5 /* ArgumentParser in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -54,6 +73,7 @@
 			isa = PBXGroup;
 			children = (
 				EBB8725E3059A00300AE7794 /* mport */,
+				EBC0000330600000009EA2E5 /* mportTests */,
 				EBB8725D3059A00300AE7794 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,6 +82,7 @@
 			isa = PBXGroup;
 			children = (
 				EBB8725C3059A00300AE7794 /* mport */,
+				EBC0000230600000009EA2E5 /* mportTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,6 +101,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				EB1693B7305E3575009EA2E5 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				EBB8725E3059A00300AE7794 /* mport */,
@@ -94,6 +116,32 @@
 			productReference = EBB8725C3059A00300AE7794 /* mport */;
 			productType = "com.apple.product-type.tool";
 		};
+		EBC0000130600000009EA2E5 /* mportTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EBC0000730600000009EA2E5 /* Build configuration list for PBXNativeTarget "mportTests" */;
+			buildPhases = (
+				EBC0000430600000009EA2E5 /* Sources */,
+				EBC0000530600000009EA2E5 /* Frameworks */,
+				EBC0000630600000009EA2E5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EBB8725E3059A00300AE7794 /* mport */,
+				EBC0000330600000009EA2E5 /* mportTests */,
+			);
+			name = mportTests;
+			packageProductDependencies = (
+				EBC0000A30600000009EA2E5 /* ArgumentParser */,
+				EBC0000B30600000009EA2E5 /* MongoKitten */,
+				EBC0000C30600000009EA2E5 /* Noora */,
+			);
+			productName = mportTests;
+			productReference = EBC0000230600000009EA2E5 /* mportTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -105,6 +153,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					EBB8725B3059A00300AE7794 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					EBC0000130600000009EA2E5 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -122,6 +173,7 @@
 				EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				EBB8726F3059AD0900AE7794 /* XCRemoteSwiftPackageReference "MongoKitten" */,
 				EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */,
+				EB1693B6305E3575009EA2E5 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBB8725D3059A00300AE7794 /* Products */;
@@ -129,9 +181,20 @@
 			projectRoot = "";
 			targets = (
 				EBB8725B3059A00300AE7794 /* mport */,
+				EBC0000130600000009EA2E5 /* mportTests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EBC0000630600000009EA2E5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		EBB872583059A00300AE7794 /* Sources */ = {
@@ -141,7 +204,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EBC0000430600000009EA2E5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EB1693B7305E3575009EA2E5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = EB1693B8305E3575009EA2E5 /* SwiftLintBuildToolPlugin */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		EBB872613059A00300AE7794 /* Debug */ = {
@@ -290,6 +367,42 @@
 			};
 			name = Release;
 		};
+		EBC0000830600000009EA2E5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2LHX5A2982;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.mport.mportTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		EBC0000930600000009EA2E5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2LHX5A2982;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.mport.mportTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -311,6 +424,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		EBC0000730600000009EA2E5 /* Build configuration list for PBXNativeTarget "mportTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EBC0000830600000009EA2E5 /* Debug */,
+				EBC0000930600000009EA2E5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -320,6 +442,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.57.2;
+			};
+		};
+		EB1693B6305E3575009EA2E5 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SimplyDanny/SwiftLintPlugins";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.65.1;
 			};
 		};
 		EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
@@ -346,6 +476,11 @@
 			package = EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */;
 			productName = Noora;
 		};
+		EB1693B8305E3575009EA2E5 /* SwiftLintBuildToolPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB1693B6305E3575009EA2E5 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */;
+			productName = "plugin:SwiftLintBuildToolPlugin";
+		};
 		EBB872673059A12000AE7794 /* ArgumentParser */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
@@ -355,6 +490,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EBB8726F3059AD0900AE7794 /* XCRemoteSwiftPackageReference "MongoKitten" */;
 			productName = MongoKitten;
+		};
+		EBC0000A30600000009EA2E5 /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
+		EBC0000B30600000009EA2E5 /* MongoKitten */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EBB8726F3059AD0900AE7794 /* XCRemoteSwiftPackageReference "MongoKitten" */;
+			productName = MongoKitten;
+		};
+		EBC0000C30600000009EA2E5 /* Noora */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */;
+			productName = Noora;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

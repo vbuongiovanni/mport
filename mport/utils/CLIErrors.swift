@@ -16,4 +16,9 @@ enum CLIError: Error {
     case outputSteamFailure
     case invalidExportFormat
     case directoryDoesNotExist
+    case noBSONFiles(directory: String)
+    case malformedBSON(file: String)
+    case importFailed(collection: String, reason: String)
+    case noCollections(database: String)
+    case migrationOverlap(collections: [String])
 }

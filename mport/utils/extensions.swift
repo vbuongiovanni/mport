@@ -8,7 +8,7 @@
 
 import Foundation
 import MongoKitten
-
+import MongoClient
 
 extension OutputStream {
     func writeString(_ string: String) {
@@ -20,7 +20,7 @@ extension OutputStream {
     }
 }
 
-fileprivate let formatter:  DateFormatter = {
+private let formatter: DateFormatter = {
     let format = DateFormatter()
     format.locale = Locale(identifier: "en_US_POSIX")
     format.timeZone = TimeZone(secondsFromGMT: 0)
@@ -28,7 +28,7 @@ fileprivate let formatter:  DateFormatter = {
     return format
 }()
 
-fileprivate func quote(_ string: String) -> String {
+private func quote(_ string: String) -> String {
     var output = "\""
     for char in string.unicodeScalars {
         switch char {
@@ -37,14 +37,14 @@ fileprivate func quote(_ string: String) -> String {
         case "\n": output += "\\n"
         case "\r": output += "\\r"
         case "\t": output += "\\t"
-        case let c where c.value < 0x20: output += String(format: "\\u%04x", c.value)
+        case let scalar where scalar.value < 0x20: output += String(format: "\\u%04x", scalar.value)
         default: output.unicodeScalars.append(char)
         }
     }
     return output + "\""
 }
 
-fileprivate func render(value: Primitive, indent: Int) -> String {
+private func render(value: Primitive, indent: Int) -> String {
     (value as? ShellRenderable)?.shellJSON(indent: indent)
         ?? quote(String(describing: value))
 }
@@ -122,4 +122,24 @@ extension Document: ShellRenderable {
         return open + "\n" + items.joined(separator: ",\n") + "\n" + close + end
     }
     
+}
+
+extension MongoCollection {
+    /// Same as MongoKitten's `insertMany`, but sends `ordered: false`. MongoDB then attempts every document in
+    /// the batch and lists the failures (e.g. duplicate `_id`s) in `writeErrors`, instead of stopping at the first.
+    func insertManyUnordered(_ documents: [Document]) async throws -> InsertReply {
+        let connection = try await database.pool.next(for: .writable)
+        var command = InsertCommand(documents: documents, inCollection: name)
+        command.ordered = false
+
+        let reply = try await connection.executeCodable(
+            command,
+            decodeAs: InsertReply.self,
+            namespace: database.commandNamespace,
+            in: transaction,
+            sessionId: sessionId ?? connection.implicitSessionId
+        )
+        guard reply.ok == 1 else { throw reply }
+        return reply
+    }
 }

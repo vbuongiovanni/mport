@@ -1,0 +1,26 @@
+# SwiftLint configuration for mport.
+# Runs on every build of the mport target through the SwiftLintBuildToolPlugin (Target → Build Phases →
+# Run Build Tool Plug-ins). `swiftlint lint` also covers mportTests.
+# Run it by hand with `swiftlint lint`, or `swiftlint --fix` to auto-correct what it can.
+# Rule reference: https://realm.github.io/SwiftLint/rule-directory.html
+
+included:
+  - mport
+  - mportTests
+
+# SwiftLint's default rules stay on. These only tune a few of them.
+
+trailing_whitespace:
+  # Xcode leaves indentation on blank lines by default, so without this every blank line would warn.
+  ignores_empty_lines: true
+
+identifier_name:
+  excluded:
+    - db  # the conventional name for a MongoDB database handle
+    - id
+
+line_length:
+  warning: 120
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
