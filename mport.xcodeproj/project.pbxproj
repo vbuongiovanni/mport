@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EB057DC3305DC102005DC6DD /* Noora in Frameworks */ = {isa = PBXBuildFile; productRef = EB057DC2305DC102005DC6DD /* Noora */; };
 		EBB872683059A12000AE7794 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = EBB872673059A12000AE7794 /* ArgumentParser */; };
 		EBB872773059AD0900AE7794 /* MongoKitten in Frameworks */ = {isa = PBXBuildFile; productRef = EBB872763059AD0900AE7794 /* MongoKitten */; };
 /* End PBXBuildFile section */
@@ -40,6 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EB057DC3305DC102005DC6DD /* Noora in Frameworks */,
 				EBB872773059AD0900AE7794 /* MongoKitten in Frameworks */,
 				EBB872683059A12000AE7794 /* ArgumentParser in Frameworks */,
 			);
@@ -86,6 +88,7 @@
 			packageProductDependencies = (
 				EBB872673059A12000AE7794 /* ArgumentParser */,
 				EBB872763059AD0900AE7794 /* MongoKitten */,
+				EB057DC2305DC102005DC6DD /* Noora */,
 			);
 			productName = mport;
 			productReference = EBB8725C3059A00300AE7794 /* mport */;
@@ -118,6 +121,7 @@
 			packageReferences = (
 				EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				EBB8726F3059AD0900AE7794 /* XCRemoteSwiftPackageReference "MongoKitten" */,
+				EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBB8725D3059A00300AE7794 /* Products */;
@@ -310,6 +314,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tuist/Noora";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.57.2;
+			};
+		};
 		EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-argument-parser.git";
@@ -329,6 +341,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		EB057DC2305DC102005DC6DD /* Noora */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB057DC1305DC102005DC6DD /* XCRemoteSwiftPackageReference "Noora" */;
+			productName = Noora;
+		};
 		EBB872673059A12000AE7794 /* ArgumentParser */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EBB872663059A12000AE7794 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;

@@ -9,10 +9,11 @@
 import Foundation
 
 enum CLIError: Error {
-    case missingArgument
+    case missingArgument(argument: String, help: String? = nil)
     case missingConfig
     case emptyConfig
     case connectionFailed
     case outputSteamFailure
     case invalidExportFormat
+    case directoryDoesNotExist
 }

@@ -9,6 +9,7 @@
 import Foundation
 import ArgumentParser
 import MongoKitten
+import Noora
 
 struct Export: AsyncParsableCommand {
     
@@ -21,7 +22,7 @@ struct Export: AsyncParsableCommand {
     @Argument(help: "Name of Database")
     var dbName: String?
     
-    @Argument(help: "Format of exported files")
+    @Option(help: "Format of exported files")
     var format: String = ""
     
     @Flag(name: .shortAndLong, help: "Export all collections from database")
@@ -34,7 +35,6 @@ struct Export: AsyncParsableCommand {
         var exportDir: String
         var exportFormat = OutputFormat.pending
         var selectedDatabase = ""
-        var collectionToExport: String
         
         let config = try CLIConfig.read()
         
@@ -65,67 +65,50 @@ struct Export: AsyncParsableCommand {
         
         if exportFormat == OutputFormat.pending {
             let availableFormats = OutputFormat.allCases.map(\.rawValue).filter {$0 != ""}
-            let selectedOutputFormat = try promptUserFromList(options: availableFormats, message: "Select an output format", instructionPrefix: validatedConnectionName)
+            let selectedOutputFormat = Noora().singleChoicePrompt(
+                title: "Output Format",
+                question: "Select an output format",
+                options: availableFormats,
+                description: "Select an output format",
+                collapseOnSelection: true,
+                autoselectSingleChoice: true
+            )
             
-            if let selectedFormat = OutputFormat(rawValue: availableFormats[selectedOutputFormat]) {
+            if let selectedFormat = OutputFormat(rawValue: selectedOutputFormat) {
                 exportFormat = selectedFormat
             } else {
                 throw CLIError.outputSteamFailure
             }
         }
         
-        // Selecting Connection
+        // Select Connection
         
-        if connectionName != nil {
-            if let selectedConnection = config.connections.first(where: {$0.name == connectionName}) {
-                connectionURI = selectedConnection.uri
-                validatedConnectionName = selectedConnection.name
-            }
+        guard let connection = try? selectConnection(config: config, connectionName: connectionName) else {
+            throw CLIError.missingArgument(argument: "connectionName")
         }
+        connectionURI = connection.uri
+        validatedConnectionName = connection.name
         
-        if connectionURI.isEmpty || connectionURI.isEmpty {
-            if config.connections.count == 1 {
-                connectionURI = config.connections[0].uri
-                validatedConnectionName = config.connections[0].name
-            } else {
-                let selectedConnectionIndex = try promptUserFromList(options: config.connections.map(\.name), message: "Select a connection")
-                connectionURI = config.connections[selectedConnectionIndex].uri
-                validatedConnectionName = config.connections[selectedConnectionIndex].name
-            }
-        }
         print("Connecting to \(validatedConnectionName)...")
         
         // Selecting DB
-        var availableDBs: [String]
         var client: MongoDatabase
         
         do {
             client = try await MongoDatabase.connect(to: connectionURI)
-            availableDBs = try await client.pool.listDatabases().map { $0.name }
         } catch {
             throw CLIError.connectionFailed
         }
         
-        
-        
-        if dbName != nil {
-            if let database = availableDBs.first(where: {$0 == dbName}) {
-                selectedDatabase = database
-            }
+        guard let selectedDatabase = try? await selectDatabase(using: client, dbName: dbName) else {
+            throw CLIError.missingArgument(argument: "dbName")
         }
         
-        if selectedDatabase.isEmpty {
-            let selectedDatabaseIndex = try promptUserFromList(options: availableDBs, message: "Select a Database", instructionPrefix: validatedConnectionName)
-            selectedDatabase = availableDBs[selectedDatabaseIndex]
-        }
-        
-        exportDir = "\(exportDir)/\(selectedDatabase)"
-        
+        exportDir = "\(exportDir)/\(validatedConnectionName)/\(selectedDatabase)"
+
         // Selecting Collection(s)
-        var availableCollections: [MongoCollection]
-        
         let db = client.pool[selectedDatabase]
-        availableCollections = try await db.listCollections()
+        let availableCollections = try await db.listCollections()
         
         if exportAll {
             for collection in availableCollections {
@@ -133,11 +116,35 @@ struct Export: AsyncParsableCommand {
             }
         } else {
             let availableCollectionNames = availableCollections.map {$0.namespace.collectionName}
-            let selectedCollectionIndex = try promptUserFromList(options: availableCollectionNames, message: "Select a Collection", instructionPrefix: validatedConnectionName)
-            collectionToExport = availableCollectionNames[selectedCollectionIndex]
-            if let collection = availableCollections.filter({$0.namespace.collectionName == collectionToExport}).first {
+            
+            let selectedCollections = Noora().multipleChoicePrompt(
+                title: "Collection(s)",
+                question: "Select one more more collection",
+                options: availableCollectionNames,
+                description: "Select an output format",
+                collapseOnSelection: true,
+                minLimit: .limited(count: 1, errorMessage: "Please select at least 1 collection"),
+                
+            )
+            
+            let targetCollections = availableCollections.filter {selectedCollections.contains($0.namespace.collectionName) }
+            
+            for collection in targetCollections {
                 try await exportCollection(savePath: exportDir, collection: collection, format: exportFormat)
             }
+        }
+    }
+    
+    private func getPath(from collectionName: String, format: OutputFormat) throws -> String {
+        switch format {
+            case .json:
+            return collectionName.appending(".json")
+            case .bson:
+            return collectionName.appending(".bson")
+            case .mongoShellSyntax:
+            return collectionName.appending(".json")
+            default:
+            throw CLIError.invalidExportFormat
         }
     }
     
@@ -145,7 +152,7 @@ struct Export: AsyncParsableCommand {
         
         let directoryURL = URL(filePath: "\(savePath)")
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-        let url = directoryURL.appending(component: "\(collection.namespace.collectionName).json")
+        let url = try directoryURL.appending(component: getPath(from: collection.namespace.collectionName, format: format))
         
         guard let coordinator = OutputStream(url: url, append: false) else {
             throw CLIError.outputSteamFailure
@@ -196,34 +203,6 @@ struct Export: AsyncParsableCommand {
     }
     
     
-    private func promptUserFromList(options: [String], message: String, instructionPrefix: String? = nil) throws -> Int {
-        print("\n----- \(message) -----\n")
-        var index = 0
-        let padding = 8
-        for option in options {
-            let indexLabel = "[\(index + 1)]:"
-            let paddingCount = padding - indexLabel.count
-            let paddingString = String(repeating: " ", count: paddingCount)
-            print("\(indexLabel)\(paddingString)\(option)")
-            index += 1
-        }
-        let selectedIndex = try promptUserForChoice(maxIndex: options.count, instructionPrefix: instructionPrefix)
-        return selectedIndex
-    }
     
-    
-    private func promptUserForChoice(maxIndex: Int, instructionPrefix: String? = nil) throws -> Int {
-        var instructions = instructionPrefix.map { "\n[\($0)]:" } ?? "\n"
-        instructions += "Enter number (1-\(maxIndex)) > "
-        while true {
-            print(instructions, terminator: "")
-            fflush(stdout)
-            guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines), let choice = Int(input), choice >= 1 && choice <= maxIndex else {
-                print("Invalid input, please try again\n")
-                continue
-            }
-            return choice - 1
-        }
-    }
     
 }

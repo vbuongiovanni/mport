@@ -14,7 +14,7 @@ struct Mport: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Import and export MongoDB collections using saved connections",
         version: "1.0.0",
-        subcommands: [ConfigureDefaults.self, RegisterConnection.self, Export.self]
+        subcommands: [ConfigureDefaults.self, RegisterConnection.self, Export.self, Import.self]
     )
 }
 
