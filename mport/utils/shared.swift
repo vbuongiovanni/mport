@@ -14,14 +14,15 @@ func selectConnection(
     config: CLIConfig,
     connectionName: String? = nil,
     title: String = "Connection",
-    description: String = "Select a connection to import into"
-) throws -> MongoConnectionRecord {
+    description: String = "Select a connection to import into",
+    store: SecretStore = KeychainStore.standard
+) throws -> SavedConnection {
     if connectionName != nil {
         if let selectedConnection = config.connections.first(where: { $0.name == connectionName }) {
-            return selectedConnection
+            return try savedConnection(selectedConnection, from: store)
         }
     }
-    
+
     let connectionAlias = Noora().singleChoicePrompt(
         title: TerminalText(stringLiteral: title),
         question: "Select a connection",
@@ -30,12 +31,40 @@ func selectConnection(
         collapseOnSelection: true,
         autoselectSingleChoice: true
     )
-    
+
     if let connection = config.connections.first(where: { $0.name == connectionAlias }) {
-        return connection
+        return try savedConnection(connection, from: store)
     }
-    
+
     throw CLIError.missingArgument(argument: "connectionName")
+}
+
+/// The connection with its URI read from the Keychain. A name in the config with no URI behind it (the Keychain
+/// entry was deleted, say) is an error that says how to fix it, rather than an empty URI.
+func savedConnection(_ record: MongoConnectionRecord, from store: SecretStore) throws -> SavedConnection {
+    guard let uri = try store.uri(forConnection: record.name) else {
+        throw ConnectionError.missingURI(name: record.name)
+    }
+    return SavedConnection(name: record.name, uri: uri)
+}
+
+/// Problems with saved connections, printed as sentences that say what to do.
+enum ConnectionError: Error, CustomStringConvertible {
+    case missingURI(name: String)
+    case notFound(name: String)
+    case emptyURI
+
+    var description: String {
+        switch self {
+        case let .missingURI(name):
+            "There's no URI saved in your Keychain for '\(name)'. "
+                + "Save it again with `mport register-connection \(name) --overwrite`."
+        case let .notFound(name):
+            "There's no saved connection called '\(name)'."
+        case .emptyURI:
+            "No URI was entered, so nothing was saved."
+        }
+    }
 }
 
 func selectDatabase(

@@ -91,4 +91,44 @@ struct WrapAwareRendererTests {
 
         #expect(pipeline.output.hasPrefix(erase(rows: 3)))
     }
+
+    // MARK: commit
+
+    /// Catches: a finished line being printed inside the live frame, where the next redraw would erase it.
+    @Test("commit erases the live frame, then writes the text")
+    func commitErasesFrame() {
+        let renderer = WrapAwareRenderer(terminalWidth: { 80 })
+        let pipeline = RecordingPipeline()
+        renderer.render("live 1\nlive 2", standardPipeline: pipeline)
+        pipeline.reset()
+
+        renderer.commit("✔︎ done", standardPipeline: pipeline)
+
+        #expect(pipeline.output == erase(rows: 2) + "✔︎ done\n")
+    }
+
+    /// Catches: the next frame erasing the committed line along with the old frame.
+    @Test("The frame after a commit doesn't erase the committed text")
+    func frameAfterCommitKeepsText() {
+        let renderer = WrapAwareRenderer(terminalWidth: { 80 })
+        let pipeline = RecordingPipeline()
+        renderer.render("live", standardPipeline: pipeline)
+        renderer.commit("✔︎ done", standardPipeline: pipeline)
+        pipeline.reset()
+
+        renderer.render("live again", standardPipeline: pipeline)
+
+        #expect(pipeline.output == "live again\n")
+    }
+
+    /// Catches: a commit with nothing on screen erasing earlier output above it.
+    @Test("commit with no frame on screen erases nothing")
+    func commitWithoutFrame() {
+        let renderer = WrapAwareRenderer(terminalWidth: { 80 })
+        let pipeline = RecordingPipeline()
+
+        renderer.commit("✔︎ done", standardPipeline: pipeline)
+
+        #expect(pipeline.output == "✔︎ done\n")
+    }
 }

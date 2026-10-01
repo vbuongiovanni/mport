@@ -61,8 +61,9 @@ struct WriteDocumentsTests {
         }
     }
 
-    /// Catches: large documents piling into one batch past MongoDB's 48MB message limit.
-    @Test("Flushes early once a batch reaches 8MB")
+    /// Catches: large documents piling into one batch past the 16MB MongoDB allows for an insert command.
+    /// Each document is 1,048,608 bytes, so eight would come to just over 8MB: the batch is sent at seven.
+    @Test("Sends a batch before it would go past 8MB")
     func batchesByBytes() async throws {
         try await TestMongo.withTemporaryDatabase { db in
             let megabyte = String(repeating: "x", count: 1 << 20)
@@ -73,8 +74,29 @@ struct WriteDocumentsTests {
                 asyncSequence(documents), into: db["large"], replacingDuplicates: false
             ) { progress.append($0) }
 
-            #expect(progress == [8, 12])
+            #expect(progress == [7, 12])
             #expect(result.inserted == 12)
+        }
+    }
+
+    /// Catches: a big document being added to an almost-full batch, making one insert larger than the 16MB MongoDB
+    /// allows for a command ("BSONObjectTooLarge", code 10334), as happened importing a `reports` collection.
+    @Test("A large document never pushes a batch past the 16MB command limit")
+    func largeDocumentStartsNewBatch() async throws {
+        try await TestMongo.withTemporaryDatabase { db in
+            let documents: [Document] = [
+                ["_id": 1, "payload": String(repeating: "x", count: 8_300_000)],
+                ["_id": 2, "payload": String(repeating: "y", count: 9_000_000)]
+            ]
+            var progress: [Int] = []
+
+            let result = try await writeDocuments(
+                asyncSequence(documents), into: db["reports"], replacingDuplicates: false
+            ) { progress.append($0) }
+
+            #expect(result.inserted == 2)
+            #expect(progress == [1, 2])
+            #expect(try await db["reports"].count() == 2)
         }
     }
 

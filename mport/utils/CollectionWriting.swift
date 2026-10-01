@@ -3,8 +3,8 @@
 //  Created by Claude on 9/18/26, at Vince's request.
 //
 //  The machinery shared by `import` (BSON files → collections) and `migrate` (collections → collections):
-//  choosing target collection names, detecting and handling collisions, the preflight plan, and streaming
-//  documents into a collection in batches.
+//  choosing target collection names, the preflight plan, and streaming documents into a collection in batches.
+//  Collisions live in CollisionPlan.swift.
 //
 
 import Foundation
@@ -80,113 +80,6 @@ private struct CollectionNameError: ValidatableError {
     let message: String
 }
 
-// MARK: - Collisions
-
-/// Which target collections already exist, and what to do about them.
-struct CollisionPlan {
-    let collectionNames: Set<String>
-    let strategy: CollisionResolution
-    /// Only used by `dump-before-import`.
-    let backupDirectory: URL
-
-    /// Duplicate `_id`s are replaced under `overwrite`, and skipped under every other strategy.
-    var replacesDuplicates: Bool {
-        strategy == .overwrite
-    }
-
-    /// Looks for target names that already exist in `db`. Only when some do does it use `flagValue`
-    /// (`--collision-resolution`) or, if that's missing or invalid, ask the user for a strategy.
-    static func resolve(
-        for targetNames: [String],
-        in db: MongoDatabase,
-        flagValue: String?,
-        backupDirectory: URL
-    ) async throws -> CollisionPlan {
-        let existingNames = Set(try await db.listCollections().map(\.name))
-        let collisions = Set(targetNames).intersection(existingNames)
-
-        guard !collisions.isEmpty else {
-            return CollisionPlan(collectionNames: [], strategy: .skip, backupDirectory: backupDirectory)
-        }
-
-        if let strategy = CollisionResolution(rawValue: flagValue ?? "") {
-            return CollisionPlan(collectionNames: collisions, strategy: strategy, backupDirectory: backupDirectory)
-        }
-
-        let selectedStrategy = Noora().singleChoicePrompt(
-            title: "Collision Strategy",
-            question: "Select a Strategy",
-            options: CollisionResolution.allCases.map(\.rawValue),
-            description: "\(collisions.count) target collection(s) already exist",
-            collapseOnSelection: true,
-            autoselectSingleChoice: true,
-            renderer: WrapAwareRenderer()
-        )
-        return CollisionPlan(
-            collectionNames: collisions,
-            strategy: CollisionResolution(rawValue: selectedStrategy) ?? .skip,
-            backupDirectory: backupDirectory
-        )
-    }
-
-    /// Runs the strategy's preparation step on each colliding collection: back it up and/or clear it.
-    /// Done once per collection before anything is written, so two sources renamed into the same
-    /// collection can't clear each other's documents.
-    func prepare(in db: MongoDatabase) async throws {
-        for name in collectionNames.sorted() {
-            let collection = db[name]
-            switch strategy {
-            case .dumpBeforeImport:
-                let backupFile = try await backUp(collection, to: backupDirectory)
-                print("Backed up '\(name)' to \(backupFile.path)")
-                try await collection.deleteAll(where: [:])
-            case .clearBeforeImport:
-                try await collection.deleteAll(where: [:])
-            case .overwrite, .skip:
-                break
-            }
-        }
-    }
-
-    fileprivate var explanation: String {
-        switch strategy {
-        case .dumpBeforeImport:
-            "Collections marked with an asterisk will be backed up, then cleared, before anything is written."
-        case .clearBeforeImport: "Collections marked with an asterisk will be cleared before anything is written."
-        case .overwrite: "In collections marked with an asterisk, documents with a matching _id will be overwritten."
-        case .skip: "In collections marked with an asterisk, documents with a matching _id will be skipped."
-        }
-    }
-}
-
-/// Where `dump-before-import` writes backups: `<root>/.mport-backups/<connection>/<database>/<timestamp>/`.
-/// The leading dot keeps the folder out of `import`'s file list.
-func backupDirectory(under root: URL, connection: String, database: String) -> URL {
-    root
-        .appending(path: ".mport-backups")
-        .appending(path: connection)
-        .appending(path: database)
-        .appending(path: Date.now.formatted(.iso8601.timeSeparator(.omitted)))
-}
-
-/// Writes every document in `collection` to `<directory>/<name>.bson`, in the same layout `export` produces,
-/// so a backup can be restored with `mport import <backup folder>`.
-private func backUp(_ collection: MongoCollection, to directory: URL) async throws -> URL {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let file = directory.appending(component: "\(collection.name).bson")
-
-    guard FileManager.default.createFile(atPath: file.path, contents: nil) else {
-        throw CLIError.outputSteamFailure
-    }
-    let handle = try FileHandle(forWritingTo: file)
-    defer { try? handle.close() }
-
-    for try await document in collection.find() {
-        try handle.write(contentsOf: document.makeData())
-    }
-    return file
-}
-
 // MARK: - Preflight plan
 
 /// Prints the preflight plan and asks the user to confirm it.
@@ -235,8 +128,9 @@ func confirmPlan<Item: CollectionMapping>(
 
 // MARK: - Writing documents
 
-/// Documents are sent to MongoDB in batches; a batch is flushed when it hits either limit.
-/// The byte cap keeps a batch of large documents well under MongoDB's 48MB message limit.
+/// Documents are sent to MongoDB in batches of up to `batchSize` documents and `maxBatchBytes` bytes. MongoKitten sends
+/// a batch inside the insert command itself, and MongoDB rejects a command over 16MB, so the byte cap keeps every
+/// batch well under that. A single document over the cap (up to MongoDB's own 16MB limit) is sent on its own.
 private let batchSize = 1_000
 private let maxBatchBytes = 8 * 1024 * 1024
 private let duplicateKeyErrorCode = 11000
@@ -273,29 +167,38 @@ func writeDocuments<Documents: AsyncSequence>(
     _ documents: Documents,
     into collection: MongoCollection,
     replacingDuplicates: Bool,
-    progress: (Int) -> Void
+    progress: (Int) async -> Void
 ) async throws -> WriteResult where Documents.Element == Document {
     var result = WriteResult()
     var batch: [Document] = []
     var batchBytes = 0
-    var documentsRead = 0
+    var documentsWritten = 0
+
+    func sendBatch() async throws {
+        result += try await insertBatch(batch, into: collection, replacingDuplicates: replacingDuplicates)
+        documentsWritten += batch.count
+        batch.removeAll(keepingCapacity: true)
+        batchBytes = 0
+        await progress(documentsWritten)
+    }
 
     for try await document in documents {
+        let documentBytes = document.makeByteBuffer().readableBytes
+        // Send what's collected before this document would take the batch past the byte cap, rather than after:
+        // one big document added to an almost-full batch is how an insert ends up over MongoDB's 16MB limit.
+        if !batch.isEmpty && batchBytes + documentBytes > maxBatchBytes {
+            try await sendBatch()
+        }
         batch.append(document)
-        batchBytes += document.makeByteBuffer().readableBytes
-        documentsRead += 1
+        batchBytes += documentBytes
 
-        if batch.count >= batchSize || batchBytes >= maxBatchBytes {
-            result += try await insertBatch(batch, into: collection, replacingDuplicates: replacingDuplicates)
-            batch.removeAll(keepingCapacity: true)
-            batchBytes = 0
-            progress(documentsRead)
+        if batch.count >= batchSize {
+            try await sendBatch()
         }
     }
 
     if !batch.isEmpty {
-        result += try await insertBatch(batch, into: collection, replacingDuplicates: replacingDuplicates)
-        progress(documentsRead)
+        try await sendBatch()
     }
     return result
 }

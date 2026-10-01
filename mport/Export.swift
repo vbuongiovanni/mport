@@ -27,7 +27,9 @@ struct Export: AsyncParsableCommand {
     
     @Flag(name: .shortAndLong, help: "Export all collections from database")
     var exportAll: Bool = false
-        
+
+    @OptionGroup var concurrencyOptions: ConcurrencyOptions
+
     func run() async throws {
         
         var connectionURI: String = ""
@@ -37,7 +39,10 @@ struct Export: AsyncParsableCommand {
         var selectedDatabase = ""
         
         let config = try CLIConfig.read()
-        
+        let limit = Concurrency.resolve(flag: concurrencyOptions.concurrency, saved: config.defaultConcurrency) {
+            Noora().warning(.alert(TerminalText(stringLiteral: $0)))
+        }
+
         // Getting default path, if not proivided
         if exportPath.isEmpty {
             exportDir = config.defaultExportPath ?? ""
@@ -83,9 +88,7 @@ struct Export: AsyncParsableCommand {
         
         // Select Connection
         
-        guard let connection = try? selectConnection(config: config, connectionName: connectionName) else {
-            throw CLIError.missingArgument(argument: "connectionName")
-        }
+        let connection = try selectConnection(config: config, connectionName: connectionName)
         connectionURI = connection.uri
         validatedConnectionName = connection.name
         
@@ -108,36 +111,79 @@ struct Export: AsyncParsableCommand {
 
         // Selecting Collection(s)
         let db = client.pool[selectedDatabase]
-        let availableCollections = try await db.listCollections()
-        
-        if exportAll {
-            for collection in availableCollections {
-                try await exportCollection(savePath: exportDir, collection: collection, format: exportFormat)
-            }
-        } else {
-            let availableCollectionNames = availableCollections.map {$0.namespace.collectionName}
-            
-            let selectedCollections = Noora().multipleChoicePrompt(
-                title: "Collection(s)",
-                question: "Select one more more collection",
-                options: availableCollectionNames,
-                description: "Select an output format",
-                collapseOnSelection: true,
-                minLimit: .limited(count: 1, errorMessage: "Please select at least 1 collection"),
-                
+        let availableNames = try await db.listCollections().map(\.name)
+        let selectedNames = try selectCollections(from: availableNames, in: selectedDatabase)
+
+        let directory = URL(filePath: exportDir)
+        try Self.refuseCaseClashes(in: selectedNames, exportingTo: directory)
+
+        let slots = try await ClientSlots.open(
+            count: min(limit, selectedNames.count), reusing: client, uri: connectionURI
+        )
+        do {
+            try await Self.export(
+                selectedNames, from: (slots: slots, database: selectedDatabase), to: directory, format: exportFormat
             )
-            
-            let targetCollections = availableCollections.filter {
-                selectedCollections.contains($0.namespace.collectionName)
-            }
-            
-            for collection in targetCollections {
-                try await exportCollection(savePath: exportDir, collection: collection, format: exportFormat)
-            }
+        } catch {
+            await slots.disconnect()
+            throw error
+        }
+        await slots.disconnect()
+    }
+
+    /// Drops `system.*` collections, as `migrate` does, then `--export-all` takes the rest and otherwise the user
+    /// picks. Throws when there's nothing left to export, rather than showing an empty picker.
+    func selectCollections(from availableNames: [String], in databaseName: String) throws -> [String] {
+        let exportableNames = availableNames.filter { !$0.hasPrefix("system.") }
+        guard !exportableNames.isEmpty else {
+            throw CLIError.noCollections(database: databaseName)
+        }
+        if exportAll {
+            return exportableNames
+        }
+
+        let selectedNames = Noora().multipleChoicePrompt(
+            title: "Collection(s)",
+            question: "Select one more more collection",
+            options: exportableNames,
+            description: "Select an output format",
+            collapseOnSelection: true,
+            minLimit: .limited(count: 1, errorMessage: "Please select at least 1 collection"),
+        )
+        return exportableNames.filter { selectedNames.contains($0) }
+    }
+
+    /// On a disk that doesn't tell upper and lower case apart, `Users` and `users` would export to the same file, so
+    /// that's refused before any connection is opened or anything is written.
+    static func refuseCaseClashes(in collectionNames: [String], exportingTo directory: URL) throws {
+        let clashes = caseClashes(in: collectionNames)
+        if !clashes.isEmpty && !isCaseSensitiveVolume(at: directory) {
+            throw ExportNameClashError(groups: clashes)
         }
     }
-    
-    private func getPath(from collectionName: String, format: OutputFormat) throws -> String {
+
+    /// Exports every collection into `directory`, one per slot at a time, each through its slot's own client.
+    /// It doesn't prompt, so tests can run it directly.
+    static func export(
+        _ collectionNames: [String],
+        from source: (slots: ClientSlots, database: String),
+        to directory: URL,
+        format: OutputFormat
+    ) async throws {
+        let lanes = makeLanes(destinationKeys: collectionNames)
+        let outcomes = await runConcurrently(
+            items: collectionNames, lanes: lanes, limit: source.slots.count
+        ) { _, name, slot in
+            try await exportCollection(
+                savePath: directory.path,
+                collection: source.slots.database(named: source.database, slot: slot)[name],
+                format: format
+            )
+        }
+        _ = try completedOutputs(of: outcomes, labels: collectionNames) { _ in "exported" }
+    }
+
+    private static func getPath(from collectionName: String, format: OutputFormat) throws -> String {
         switch format {
         case .json:
             return collectionName.appending(".json")
@@ -150,7 +196,7 @@ struct Export: AsyncParsableCommand {
         }
     }
     
-    func exportCollection(savePath: String, collection: MongoCollection, format: OutputFormat) async throws {
+    static func exportCollection(savePath: String, collection: MongoCollection, format: OutputFormat) async throws {
         
         let directoryURL = URL(filePath: "\(savePath)")
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)

@@ -27,7 +27,8 @@ struct CommandParsingTests {
         RoutingCase(subcommand: "migrate", expectedType: "Migrate"),
         RoutingCase(subcommand: "export", expectedType: "Export"),
         RoutingCase(subcommand: "configure-defaults", expectedType: "ConfigureDefaults"),
-        RoutingCase(subcommand: "register-connection", expectedType: "RegisterConnection")
+        RoutingCase(subcommand: "register-connection", expectedType: "RegisterConnection"),
+        RoutingCase(subcommand: "remove-connection", expectedType: "RemoveConnection")
     ]
 
     /// Catches: a new command written but never added to `Mport.configuration.subcommands`.
@@ -36,6 +37,8 @@ struct CommandParsingTests {
         var arguments = [routingCase.subcommand]
         if routingCase.subcommand == "register-connection" {
             arguments += ["name", "mongodb://localhost"]
+        } else if routingCase.subcommand == "remove-connection" {
+            arguments += ["name"]
         }
         let command = try Mport.parseAsRoot(arguments)
         #expect(String(describing: type(of: command)) == routingCase.expectedType)
@@ -51,7 +54,8 @@ struct CommandParsingTests {
             "-d", "shop",
             "--import-all",
             "-c", "users,orders",
-            "--collision-resolution", "overwrite"
+            "--collision-resolution", "overwrite",
+            "--skip-backup"
         ])
 
         #expect(command.directory == "/exports")
@@ -60,6 +64,7 @@ struct CommandParsingTests {
         #expect(command.importAll)
         #expect(command.collectionNames == ["users,orders"])
         #expect(command.collisionResolution == "overwrite")
+        #expect(command.skipBackup)
     }
 
     /// Catches: an argument becoming required, which would stop the interactive prompts from ever running.
@@ -73,6 +78,7 @@ struct CommandParsingTests {
         #expect(!command.importAll)
         #expect(command.collectionNames.isEmpty)
         #expect(command.collisionResolution == nil)
+        #expect(!command.skipBackup)
     }
 
     // MARK: Migrate
@@ -142,11 +148,22 @@ struct CommandParsingTests {
         #expect(command.overwrite)
     }
 
-    /// Catches: register-connection accepting a missing URI and saving a broken connection.
-    @Test("register-connection: the URI is required")
-    func registerConnectionRequiresURI() {
+    /// Catches: the URI becoming required again, which would force it onto the command line and into shell history.
+    @Test("register-connection: the URI can be left out, to be typed hidden")
+    func registerConnectionURIOptional() throws {
+        let command = try RegisterConnection.parse(["local"])
+        #expect(command.name == "local")
+        #expect(command.uri == nil)
+    }
+
+    /// Catches: a connection being saved without a name.
+    @Test("register-connection and remove-connection: the name is required")
+    func connectionNameRequired() {
         #expect(throws: (any Error).self) {
-            try RegisterConnection.parse(["local"])
+            try RegisterConnection.parse([])
+        }
+        #expect(throws: (any Error).self) {
+            try RemoveConnection.parse([])
         }
     }
 
@@ -157,5 +174,84 @@ struct CommandParsingTests {
 
         #expect(command.outputPath == "/exports")
         #expect(command.format == "bson")
+        #expect(command.concurrency == nil)
+    }
+
+    /// Catches: --concurrency only working alongside the positional arguments, or not at all.
+    @Test("configure-defaults: --concurrency alone and alongside the other defaults", arguments: [
+        ["--concurrency", "8"],
+        ["/exports", "bson", "--concurrency", "8"]
+    ])
+    func configureDefaultsParsesConcurrency(_ arguments: [String]) throws {
+        #expect(try ConfigureDefaults.parse(arguments).concurrency == 8)
+    }
+
+    /// Catches: saving a default that every later run would have to warn about.
+    @Test("configure-defaults: an out-of-range --concurrency is rejected", arguments: ["0", "33", "100"])
+    func configureDefaultsRejectsConcurrency(_ value: String) {
+        #expect(throws: (any Error).self) {
+            try ConfigureDefaults.parse(["--concurrency", value])
+        }
+    }
+
+    /// Catches: setting the concurrency default wiping or changing the other saved settings.
+    @Test("configure-defaults --concurrency changes only defaultConcurrency")
+    func configureDefaultsKeepsOtherSettings() throws {
+        var config = CLIConfig()
+        config.connections = [MongoConnectionRecord(name: "local")]
+        config.defaultExportPath = "/exports"
+        config.defaultFormat = .bson
+
+        let changed = try ConfigureDefaults.parse(["--concurrency", "8"]).apply(to: &config)
+
+        #expect(changed)
+        #expect(config.defaultConcurrency == 8)
+        #expect(config.connections.map(\.name) == ["local"])
+        #expect(config.defaultExportPath == "/exports")
+        #expect(config.defaultFormat == .bson)
+    }
+
+    // MARK: --concurrency on export, import and migrate
+
+    struct ConcurrencyCase: CustomTestStringConvertible, Sendable {
+        let arguments: [String]
+        let expected: Int?
+
+        var testDescription: String { arguments.joined(separator: " ") }
+    }
+
+    static let concurrencyCases: [ConcurrencyCase] = [
+        ConcurrencyCase(arguments: ["-j", "2"], expected: 2),
+        ConcurrencyCase(arguments: ["--concurrency", "8"], expected: 8),
+        ConcurrencyCase(arguments: [], expected: nil)
+    ]
+
+    /// Catches: one command missing the shared option, or -j and --concurrency parsing differently.
+    @Test("export, import and migrate all take -j / --concurrency", arguments: concurrencyCases)
+    func parsesConcurrency(_ concurrencyCase: ConcurrencyCase) throws {
+        #expect(try Export.parse(concurrencyCase.arguments).concurrencyOptions.concurrency == concurrencyCase.expected)
+        #expect(try Import.parse(concurrencyCase.arguments).concurrencyOptions.concurrency == concurrencyCase.expected)
+        #expect(try Migrate.parse(concurrencyCase.arguments).concurrencyOptions.concurrency == concurrencyCase.expected)
+    }
+
+    /// Catches: an out-of-range value reaching a run, where it would open 0 or dozens of connections.
+    @Test("An out-of-range --concurrency is rejected with the valid range", arguments: ["0", "33"])
+    func rejectsOutOfRangeConcurrency(_ value: String) {
+        for command in [Export.self, Import.self, Migrate.self] as [any ParsableCommand.Type] {
+            do {
+                _ = try command.parse(["-j", value])
+                Issue.record("\(command) accepted -j \(value)")
+            } catch {
+                #expect(command.message(for: error).contains("between 1 and 32"))
+            }
+        }
+    }
+
+    /// Catches: a non-number being accepted as a concurrency.
+    @Test("A non-numeric --concurrency is rejected")
+    func rejectsNonNumericConcurrency() {
+        #expect(throws: (any Error).self) {
+            try Export.parse(["--concurrency", "abc"])
+        }
     }
 }
