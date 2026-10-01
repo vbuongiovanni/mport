@@ -5,7 +5,6 @@
 //  The promise at the heart of mport: what `export` writes, `import` can read back.
 //
 
-import ArgumentParser
 import Foundation
 import MongoKitten
 import Testing
@@ -18,12 +17,6 @@ import Testing
 )
 struct ExportRoundTripTests {
 
-    private let exporter: Export
-
-    init() throws {
-        exporter = try Export.parse(["/unused", "local", "unused"])
-    }
-
     /// Catches: export and import disagreeing about the BSON file layout.
     @Test("A BSON export imports back into another database unchanged")
     func bsonRoundTrip() async throws {
@@ -33,7 +26,7 @@ struct ExportRoundTripTests {
                     let documents = SampleDocuments.mixedTypes(count: 150)
                     try await source["users"].insertMany(documents)
 
-                    try await exporter.exportCollection(
+                    try await Export.exportCollection(
                         savePath: directory.path, collection: source["users"], format: .bson
                     )
                     let file = directory.appending(path: "users.bson")
@@ -55,7 +48,7 @@ struct ExportRoundTripTests {
             try await TestMongo.withTemporaryDatabase { db in
                 try await db["orders"].insertMany(SampleDocuments.numbered(1...25))
 
-                try await exporter.exportCollection(savePath: directory.path, collection: db["orders"], format: .json)
+                try await Export.exportCollection(savePath: directory.path, collection: db["orders"], format: .json)
 
                 let data = try Data(contentsOf: directory.appending(path: "orders.json"))
                 let array = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
@@ -69,7 +62,7 @@ struct ExportRoundTripTests {
     func emptyJSONExport() async throws {
         try await withTemporaryDirectory { directory in
             try await TestMongo.withTemporaryDatabase { db in
-                try await exporter.exportCollection(savePath: directory.path, collection: db["empty"], format: .json)
+                try await Export.exportCollection(savePath: directory.path, collection: db["empty"], format: .json)
 
                 let data = try Data(contentsOf: directory.appending(path: "empty.json"))
                 let array = try #require(try JSONSerialization.jsonObject(with: data) as? [Any])
@@ -85,7 +78,7 @@ struct ExportRoundTripTests {
             try await TestMongo.withTemporaryDatabase { db in
                 try await db["users"].insertMany(SampleDocuments.numbered(1...5))
 
-                try await exporter.exportCollection(
+                try await Export.exportCollection(
                     savePath: directory.path, collection: db["users"], format: .mongoShellSyntax
                 )
 

@@ -38,10 +38,15 @@ struct Migrate: AsyncParsableCommand {
     @Option(name: .long, help: "Collision Resolution Strategy")
     var collisionResolution: String?
 
+    @OptionGroup var concurrencyOptions: ConcurrencyOptions
+
     func run() async throws {
         let config = try CLIConfig.read()
         guard !config.connections.isEmpty else {
             throw CLIError.emptyConfig
+        }
+        let limit = Concurrency.resolve(flag: concurrencyOptions.concurrency, saved: config.defaultConcurrency) {
+            Noora().warning(.alert(TerminalText(stringLiteral: $0)))
         }
 
         let source = try await selectEndpoint(
@@ -80,8 +85,7 @@ struct Migrate: AsyncParsableCommand {
             return
         }
 
-        try await collisions.prepare(in: target.database)
-        try await copyCollections(plan, from: source, to: target, replacingDuplicates: collisions.replacesDuplicates)
+        try await copyCollections(plan, from: source, to: target, collisions: collisions, limit: limit)
     }
 
     // MARK: - Steps
@@ -93,14 +97,12 @@ struct Migrate: AsyncParsableCommand {
         connectionName: String?,
         dbName: String?
     ) async throws -> Endpoint {
-        guard let connection = try? selectConnection(
+        let connection = try selectConnection(
             config: config,
             connectionName: connectionName,
             title: "\(side.title) Connection",
             description: "Select the connection to \(side.verb)"
-        ) else {
-            throw CLIError.missingArgument(argument: side.connectionFlag)
-        }
+        )
 
         print("Connecting to \(connection.name)...")
         let client: MongoDatabase
@@ -183,45 +185,94 @@ struct Migrate: AsyncParsableCommand {
         }
     }
 
+    /// Everything after the plan is confirmed: open a client per slot on both sides (so a refused connection fails
+    /// before anything changes), prepare the collisions, copy, and print the summary in plan order.
     private func copyCollections(
         _ plan: [MigrationItem],
         from source: Endpoint,
         to target: Endpoint,
-        replacingDuplicates: Bool
+        collisions: CollisionPlan,
+        limit: Int
     ) async throws {
-        var takeaways: [TerminalText] = []
-        var totalWritten = 0
-
-        for item in plan {
-            let sourceCollection = source.database[item.sourceName]
-            let targetCollection = target.database[item.collectionName]
-            let documentCount = try await sourceCollection.count()
-            let message = "Migrating \(item.displayName) → \(item.collectionName)"
-
-            let result = try await Noora().progressStep(
-                message: message,
-                successMessage: nil,
-                errorMessage: "Failed to migrate \(item.displayName)",
-                showSpinner: true,
-                renderer: WrapAwareRenderer()
-            ) { updateMessage in
-                try await writeDocuments(
-                    sourceCollection.find(),
-                    into: targetCollection,
-                    replacingDuplicates: replacingDuplicates
-                ) { count in
-                    updateMessage("\(message) (\(count)/\(documentCount) documents)")
-                }
-            }
-
-            totalWritten += result.written
-            takeaways.append("\(item.displayName) → \(item.collectionName): \(result.summary)")
+        let slotCount = min(limit, makeLanes(destinationKeys: plan.map(\.collectionName)).count)
+        let sourceSlots = try await ClientSlots.open(
+            count: slotCount, reusing: source.database, uri: source.connection.uri
+        )
+        let targetSlots: ClientSlots
+        do {
+            targetSlots = try await ClientSlots.open(
+                count: slotCount, reusing: target.database, uri: target.connection.uri
+            )
+        } catch {
+            await sourceSlots.disconnect()
+            throw error
         }
 
+        let outcomes: [ItemOutcome<WriteResult>]
+        do {
+            try await collisions.prepare(in: (slots: targetSlots, database: target.databaseName))
+            outcomes = await Self.copyItems(
+                plan,
+                from: (slots: sourceSlots, database: source.databaseName),
+                to: (slots: targetSlots, database: target.databaseName),
+                replacingDuplicates: collisions.replacesDuplicates,
+                board: ProgressBoard(total: plan.count)
+            )
+        } catch {
+            await sourceSlots.disconnect()
+            await targetSlots.disconnect()
+            throw error
+        }
+        await sourceSlots.disconnect()
+        await targetSlots.disconnect()
+
+        let labels = plan.map { "\($0.displayName) → \($0.collectionName)" }
+        let results = try completedOutputs(of: outcomes, labels: labels, summary: \.summary)
+        let takeaways = zip(labels, results).map { label, result in
+            TerminalText(stringLiteral: "\(label): \(result.summary)")
+        }
+        let totalWritten = results.reduce(0) { $0 + $1.written }
         Noora().success(.alert(
             "Migrated \(totalWritten) documents from \(source.label) to \(target.label)",
             takeaways: takeaways
         ))
+    }
+
+    /// Copies every item, one per slot at a time. Each slot reads through its own source client and writes through
+    /// its own target client, and progress goes to `board`. Sources going into the same collection run one after
+    /// another, in plan order. It doesn't prompt, so tests can run it directly.
+    static func copyItems(
+        _ plan: [MigrationItem],
+        from source: (slots: ClientSlots, database: String),
+        to target: (slots: ClientSlots, database: String),
+        replacingDuplicates: Bool,
+        board: ProgressBoard
+    ) async -> [ItemOutcome<WriteResult>] {
+        let lanes = makeLanes(destinationKeys: plan.map(\.collectionName))
+        let limit = min(source.slots.count, target.slots.count)
+        let outcomes = await runConcurrently(items: plan, lanes: lanes, limit: limit) { index, item, slot in
+            let label = "\(item.displayName) → \(item.collectionName)"
+            let sourceCollection = source.slots.database(named: source.database, slot: slot)[item.sourceName]
+            let targetCollection = target.slots.database(named: target.database, slot: slot)[item.collectionName]
+            do {
+                let documentCount = try await sourceCollection.count()
+                await board.start(index: index, label: "Migrating \(label)", total: documentCount)
+                let result = try await writeDocuments(
+                    sourceCollection.find(),
+                    into: targetCollection,
+                    replacingDuplicates: replacingDuplicates
+                ) { count in
+                    await board.update(index: index, count: count)
+                }
+                await board.finish(index: index, line: "✔︎ \(label): \(result.summary)")
+                return result
+            } catch {
+                await board.finish(index: index, line: "✖ \(label): \(error)")
+                throw error
+            }
+        }
+        await board.close()
+        return outcomes
     }
 }
 
@@ -254,7 +305,7 @@ struct Endpoint {
         }
     }
 
-    let connection: MongoConnectionRecord
+    let connection: SavedConnection
     let databaseName: String
     let database: MongoDatabase
 
@@ -264,7 +315,7 @@ struct Endpoint {
 }
 
 /// One source collection, and the collection it will be copied into on the target.
-struct MigrationItem: CollectionMapping {
+struct MigrationItem: CollectionMapping, Sendable {
     let sourceName: String
     var collectionName: String
 

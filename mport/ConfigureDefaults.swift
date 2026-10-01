@@ -12,21 +12,35 @@ import ArgumentParser
 struct ConfigureDefaults: ParsableCommand {
     
     static let configuration = CommandConfiguration(
-        abstract: "Register a default output path",
+        abstract: "Save defaults: output path, output format, and how many collections to work on at once",
         version: "1.0.0"
     )
-    
+
     @Argument(help: "Default path for output files")
     var outputPath: String?
-    
+
     @Argument(help: "Default format of output files")
     var format: String?
-    
+
+    @Option(help: "Default number of collections to work on at once, 1-32 (4 if never set)")
+    var concurrency: Int?
+
+    func validate() throws {
+        try Concurrency.validate(concurrency)
+    }
+
     func run() throws {
-        
         var config = try CLIConfig.read()
+        if try apply(to: &config) {
+            try CLIConfig.write(newConfig: config)
+        }
+    }
+
+    /// Applies the given arguments to `config`, and returns whether anything changed.
+    /// Only an output path touches the disk (its directory is created), so the rest can be tested without it.
+    func apply(to config: inout CLIConfig) throws -> Bool {
         var didChange = false
-        
+
         if let outputPath = outputPath {
             let url = URL(filePath: outputPath)
             
@@ -47,9 +61,12 @@ struct ConfigureDefaults: ParsableCommand {
                 throw CLIError.invalidExportFormat
             }
         }
-        
-        if didChange {
-            try CLIConfig.write(newConfig: config)
+
+        if let concurrency = concurrency {
+            config.defaultConcurrency = concurrency
+            didChange = true
         }
+
+        return didChange
     }
 }

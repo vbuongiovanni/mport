@@ -26,10 +26,7 @@ final class WrapAwareRenderer: Rendering {
     }
 
     func render(_ input: String, standardPipeline: StandardPipelining) {
-        if rowsOnScreen > 0 {
-            // Move up to the first row of the previous frame, back to column 1, and clear everything below.
-            standardPipeline.write(content: "\u{1B}[\(rowsOnScreen)A\u{1B}[1G\u{1B}[0J")
-        }
+        erasePreviousFrame(standardPipeline)
 
         let lines = input.split(separator: "\n")
         for line in lines {
@@ -38,6 +35,22 @@ final class WrapAwareRenderer: Rendering {
 
         let width = terminalWidth()
         rowsOnScreen = lines.reduce(0) { total, line in total + Self.rows(for: line, width: width) }
+    }
+
+    /// Prints `text` so it stays on screen: erases the current frame, writes `text`, and forgets the frame, so the
+    /// next `render` draws below `text` instead of erasing it. This is how a finished line is left above a live
+    /// progress display.
+    func commit(_ text: String, standardPipeline: StandardPipelining) {
+        erasePreviousFrame(standardPipeline)
+        standardPipeline.write(content: text.hasSuffix("\n") ? text : "\(text)\n")
+        rowsOnScreen = 0
+    }
+
+    private func erasePreviousFrame(_ standardPipeline: StandardPipelining) {
+        if rowsOnScreen > 0 {
+            // Move up to the first row of the previous frame, back to column 1, and clear everything below.
+            standardPipeline.write(content: "\u{1B}[\(rowsOnScreen)A\u{1B}[1G\u{1B}[0J")
+        }
     }
 
     /// Rows a line fills once the terminal wraps it. Color codes take up no space, so they're stripped first.

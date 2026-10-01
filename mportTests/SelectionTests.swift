@@ -172,7 +172,7 @@ struct RejectSelfCopiesTests {
     private func endpoint(alias: String, uri: String, database: String) throws -> Endpoint {
         let client = try MongoDatabase.lazyConnect(to: uri)
         return Endpoint(
-            connection: MongoConnectionRecord(name: alias, uri: uri),
+            connection: SavedConnection(name: alias, uri: uri),
             databaseName: database,
             database: client.pool[database]
         )

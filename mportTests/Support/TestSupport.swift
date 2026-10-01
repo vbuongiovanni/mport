@@ -172,3 +172,52 @@ extension MongoCollection {
         try await find().sort(["_id": 1]).drain()
     }
 }
+
+// MARK: - Connection URIs
+
+/// Stands in for the Keychain, so tests never read or write real saved connections.
+final class InMemorySecretStore: SecretStore {
+    private let uris: Mutex<[String: String]>
+
+    init(_ uris: [String: String] = [:]) {
+        self.uris = Mutex(uris)
+    }
+
+    var all: [String: String] {
+        uris.withLock { $0 }
+    }
+
+    func uri(forConnection name: String) throws -> String? {
+        uris.withLock { $0[name] }
+    }
+
+    func setURI(_ uri: String, forConnection name: String) throws {
+        uris.withLock { $0[name] = uri }
+    }
+
+    func removeURI(forConnection name: String) throws {
+        uris.withLock { _ = $0.removeValue(forKey: name) }
+    }
+}
+
+/// A store whose writes always fail, as a locked or denied Keychain would.
+struct FailingSecretStore: SecretStore {
+    struct Failure: Error {}
+
+    func uri(forConnection name: String) throws -> String? {
+        throw Failure()
+    }
+
+    func setURI(_ uri: String, forConnection name: String) throws {
+        throw Failure()
+    }
+
+    func removeURI(forConnection name: String) throws {
+        throw Failure()
+    }
+}
+
+/// A file's permission bits, e.g. `0o600`.
+func permissions(of url: URL) throws -> Int {
+    try (FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue ?? -1
+}
